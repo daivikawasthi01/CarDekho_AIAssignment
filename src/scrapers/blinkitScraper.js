@@ -1,6 +1,6 @@
 /**
  * Blinkit Scraper Module
- * Uses Playwright with System Google Chrome for live website extraction.
+ * Features async retries with backoff, transparent error reporting, and Playwright Chromium automation.
  */
 
 const { chromium } = require('playwright');
@@ -10,18 +10,11 @@ const { getMockDataForQuery } = require('./mockFixtures');
 
 const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-async function scrapeBlinkit(query, options = {}) {
-    if (options.useMock) {
-        console.log(`[BlinkitScraper] Using Mock Fixture mode for query: "${query}"`);
-        return getMockDataForQuery(query).blinkit;
-    }
-
+async function scrapeBlinkitSingleAttempt(query, location = config.DEFAULT_LOCATION) {
     let browser = null;
     let listings = [];
 
     try {
-        console.log(`[BlinkitScraper] Launching Chrome live browser for query: "${query}"...`);
-        
         const launchOptions = {
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
@@ -34,7 +27,7 @@ async function scrapeBlinkit(query, options = {}) {
         browser = await chromium.launch(launchOptions);
 
         const context = await browser.newContext({
-            geolocation: { latitude: config.LOCATION.latitude, longitude: config.LOCATION.longitude },
+            geolocation: { latitude: location.latitude, longitude: location.longitude },
             permissions: ['geolocation'],
             userAgent: config.USER_AGENT,
             viewport: { width: 1440, height: 900 }
@@ -42,7 +35,6 @@ async function scrapeBlinkit(query, options = {}) {
 
         const page = await context.newPage();
 
-        // Listen for XHR layout search response JSON
         const jsonPromise = new Promise((resolve) => {
             page.on('response', async (response) => {
                 const url = response.url();
@@ -66,7 +58,6 @@ async function scrapeBlinkit(query, options = {}) {
         ]);
 
         if (snippets && snippets.length > 0) {
-            console.log(`[BlinkitScraper] Intercepted ${snippets.length} live snippets from Blinkit`);
             for (const snippet of snippets) {
                 const data = snippet.data;
                 if (!data || !data.name || !data.name.text) continue;
@@ -98,19 +89,69 @@ async function scrapeBlinkit(query, options = {}) {
             }
         }
     } catch (err) {
-        console.error(`[BlinkitScraper] Exception: ${err.message}`);
+        throw new Error(`Blinkit scraper failed: ${err.message}`);
     } finally {
         if (browser) {
             await browser.close().catch(() => {});
         }
     }
 
-    if (listings.length === 0) {
-        console.warn(`[BlinkitScraper] Live scrape yielded 0 items. Falling back to Mock Fixtures.`);
-        return getMockDataForQuery(query).blinkit;
+    return listings;
+}
+
+/**
+ * Main Scraper Entry Point with Retries
+ */
+async function scrapeBlinkit(query, options = {}) {
+    if (options.useMock) {
+        console.log(`[BlinkitScraper] Explicit Mock Fixture requested for query: "${query}"`);
+        const mockData = getMockDataForQuery(query).blinkit;
+        return {
+            success: true,
+            listings: mockData,
+            error: null,
+            attempts: 0,
+            isMock: true
+        };
     }
 
-    return listings;
+    const location = options.location || config.DEFAULT_LOCATION;
+    const maxRetries = config.SCRAPER_MAX_RETRIES;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`[BlinkitScraper] Attempt ${attempt}/${maxRetries} for query: "${query}"...`);
+            const listings = await scrapeBlinkitSingleAttempt(query, location);
+
+            if (listings.length > 0) {
+                console.log(`[BlinkitScraper] Attempt ${attempt} succeeded with ${listings.length} live items!`);
+                return {
+                    success: true,
+                    listings: listings,
+                    error: null,
+                    attempts: attempt,
+                    isMock: false
+                };
+            }
+            lastError = '0 live listings returned from Blinkit layout endpoint';
+        } catch (err) {
+            lastError = err.message;
+            console.warn(`[BlinkitScraper] Attempt ${attempt} failed: ${err.message}`);
+        }
+
+        if (attempt < maxRetries) {
+            await new Promise(res => setTimeout(res, 1000 * attempt));
+        }
+    }
+
+    return {
+        success: false,
+        listings: [],
+        error: `Blinkit live search unavailable: ${lastError}`,
+        attempts: maxRetries,
+        isMock: false
+    };
 }
 
 module.exports = {

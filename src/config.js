@@ -5,8 +5,8 @@
 module.exports = {
     PORT: process.env.PORT || 3000,
     
-    // Delivery Location Configuration ("Location of your choice")
-    LOCATION: {
+    // Default Delivery Location ("Location of your choice")
+    DEFAULT_LOCATION: {
         city: 'Bengaluru',
         area: 'Koramangala 4th Block',
         pincode: '560034',
@@ -15,15 +15,16 @@ module.exports = {
         displayText: 'Koramangala 4th Block, Bengaluru - 560034'
     },
 
-    // Cache TTL in milliseconds (120 seconds = 2 mins)
+    // Cache TTL in milliseconds (120 seconds)
     CACHE_TTL_MS: 120 * 1000,
 
-    // Max listings to extract per store per query
+    // Max results per store per search
     MAX_RESULTS_PER_STORE: 12,
 
-    // Scraper Configuration
-    SCRAPER_TIMEOUT_MS: 15000,
-    
-    // User Agent for Playwright automation context
+    // Scraper Retry & Timeout Settings
+    SCRAPER_TIMEOUT_MS: 12000,
+    SCRAPER_MAX_RETRIES: 2,
+
+    // User Agent for Playwright automation
     USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 };

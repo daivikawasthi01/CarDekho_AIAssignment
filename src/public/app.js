@@ -31,7 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const blinkitUnmatchedCount = document.getElementById('blinkit-unmatched-count');
     const instamartUnmatchedCount = document.getElementById('instamart-unmatched-count');
 
-    // Quick Pill Click Handlers
     pillBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             const query = btn.getAttribute('data-query');
@@ -40,7 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Form Submit Handler
     searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const query = searchInput.value.trim();
@@ -95,7 +93,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderResults(data, clientLatency) {
-        // Render Stats Metadata
         metaBar.classList.remove('hidden');
         statTotal.textContent = (data.stats.totalBlinkit + data.stats.totalInstamart);
         statConfident.textContent = data.stats.confidentCount;
@@ -121,27 +118,42 @@ document.addEventListener('DOMContentLoaded', () => {
             likelyGrid.innerHTML = data.likelyMatches.map(m => createMatchCardHTML(m, false)).join('');
         }
 
-        // 3. Unmatched Items
+        // 3. Unmatched & Store Status Output
         const bUnmatched = data.unmatched.blinkitOnly || [];
         const iUnmatched = data.unmatched.instamartOnly || [];
+        const bStatus = data.storeStatuses ? data.storeStatuses.blinkit : { success: true };
+        const iStatus = data.storeStatuses ? data.storeStatuses.instamart : { success: true };
 
-        if (bUnmatched.length > 0 || iUnmatched.length > 0) {
+        unmatchedSection.classList.remove('hidden');
+        blinkitUnmatchedCount.textContent = bUnmatched.length;
+        instamartUnmatchedCount.textContent = iUnmatched.length;
+
+        // Render Blinkit Column
+        if (bUnmatched.length > 0) {
             hasAnyResults = true;
-            unmatchedSection.classList.remove('hidden');
-
-            blinkitUnmatchedCount.textContent = bUnmatched.length;
-            instamartUnmatchedCount.textContent = iUnmatched.length;
-
-            blinkitUnmatchedList.innerHTML = bUnmatched.length > 0 
-                ? bUnmatched.map(createUnmatchedItemHTML).join('')
-                : '<div class="item-var" style="padding: 10px;">No store-exclusive items</div>';
-
-            instamartUnmatchedList.innerHTML = iUnmatched.length > 0
-                ? iUnmatched.map(createUnmatchedItemHTML).join('')
-                : '<div class="item-var" style="padding: 10px;">No store-exclusive items</div>';
+            blinkitUnmatchedList.innerHTML = bUnmatched.map(createUnmatchedItemHTML).join('');
+        } else if (!bStatus.success) {
+            blinkitUnmatchedList.innerHTML = `<div class="status-warning-box">Blinkit Live Search Unavailable (${bStatus.error || 'Connection Failed'})</div>`;
+        } else {
+            blinkitUnmatchedList.innerHTML = `<div class="item-var" style="padding: 10px;">No Blinkit-exclusive items</div>`;
         }
 
-        if (!hasAnyResults) {
+        // Render Instamart Column with Transparent Store Error Notice
+        if (iUnmatched.length > 0) {
+            hasAnyResults = true;
+            instamartUnmatchedList.innerHTML = iUnmatched.map(createUnmatchedItemHTML).join('');
+        } else if (!iStatus.success) {
+            instamartUnmatchedList.innerHTML = `
+                <div class="status-warning-box">
+                    <strong>Swiggy Instamart Live Search Blocked</strong>
+                    <p style="font-size: 11px; margin-top: 4px; color: var(--text-muted);">Cloudflare bot challenge active for automated browser context. Retried ${iStatus.attempts || 2} times.</p>
+                </div>
+            `;
+        } else {
+            instamartUnmatchedList.innerHTML = `<div class="item-var" style="padding: 10px;">No Instamart-exclusive items</div>`;
+        }
+
+        if (!hasAnyResults && bStatus.success && iStatus.success) {
             emptyState.classList.remove('hidden');
         }
     }
@@ -153,7 +165,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const isBlinkitCheaper = comp.cheaperStore === 'Blinkit';
         const isInstamartCheaper = comp.cheaperStore === 'Instamart';
-        const isEqualPrice = comp.cheaperStore === 'Equal';
 
         let deltaBannerHTML = '';
         if (isBlinkitCheaper) {

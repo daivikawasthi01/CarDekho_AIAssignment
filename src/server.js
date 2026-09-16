@@ -23,7 +23,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/config', (req, res) => {
     res.json({
         success: true,
-        location: config.LOCATION,
+        location: config.DEFAULT_LOCATION,
         cacheTtlSeconds: config.CACHE_TTL_MS / 1000
     });
 });
@@ -34,7 +34,7 @@ app.get('/api/config', (req, res) => {
  */
 app.get('/api/search', async (req, res) => {
     const rawQuery = req.query.q || '';
-    const query = String(rawQuery).trim();
+    const query = String(rawQuery).trim().substring(0, 100); // Sanitize query length
     const useMock = req.query.mock === 'true' || process.env.USE_MOCK === 'true';
 
     if (!query) {
@@ -68,8 +68,9 @@ app.get('/api/search', async (req, res) => {
             success: true,
             isCached: false,
             query: query,
+            storeStatuses: scrapeResults.storeStatuses,
             meta: {
-                location: config.LOCATION,
+                location: config.DEFAULT_LOCATION,
                 fetchedAt: new Date().toISOString(),
                 scrapeDurationMs: scrapeDuration,
                 matchDurationMs: matchDuration,
@@ -82,7 +83,7 @@ app.get('/api/search', async (req, res) => {
             stats: matchedOutput.stats
         };
 
-        // Cache the result
+        // Cache valid scrape payload
         cache.set(cacheKey, responsePayload);
 
         res.json(responsePayload);
@@ -100,7 +101,7 @@ app.get('/api/search', async (req, res) => {
 app.listen(config.PORT, () => {
     console.log(`=======================================================`);
     console.log(`🚀 Grocery Price Compare Server is running on port ${config.PORT}`);
-    console.log(`📍 Delivery Location: ${config.LOCATION.displayText}`);
+    console.log(`📍 Delivery Location: ${config.DEFAULT_LOCATION.displayText}`);
     console.log(`🔗 Web UI URL: http://localhost:${config.PORT}`);
     console.log(`=======================================================`);
 });

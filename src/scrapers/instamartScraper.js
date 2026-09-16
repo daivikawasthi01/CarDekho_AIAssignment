@@ -1,6 +1,6 @@
 /**
  * Swiggy Instamart Scraper Module
- * Uses Playwright with System Google Chrome to bypass Cloudflare and extract 100% live listings.
+ * Features async retries with backoff, transparent error reporting, and Playwright Chromium automation.
  */
 
 const { chromium } = require('playwright');
@@ -10,21 +10,19 @@ const { getMockDataForQuery } = require('./mockFixtures');
 
 const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-async function scrapeInstamart(query, options = {}) {
-    if (options.useMock) {
-        console.log(`[InstamartScraper] Using Mock Fixture mode for query: "${query}"`);
-        return getMockDataForQuery(query).instamart;
-    }
-
+async function scrapeInstamartSingleAttempt(query, location = config.DEFAULT_LOCATION) {
     let browser = null;
     let listings = [];
 
     try {
-        console.log(`[InstamartScraper] Launching Chrome live browser for query: "${query}"...`);
-        
         const launchOptions = {
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-infobars'
+            ]
         };
 
         if (fs.existsSync(CHROME_PATH)) {
@@ -34,7 +32,7 @@ async function scrapeInstamart(query, options = {}) {
         browser = await chromium.launch(launchOptions);
 
         const context = await browser.newContext({
-            geolocation: { latitude: config.LOCATION.latitude, longitude: config.LOCATION.longitude },
+            geolocation: { latitude: location.latitude, longitude: location.longitude },
             permissions: ['geolocation'],
             userAgent: config.USER_AGENT,
             viewport: { width: 1440, height: 900 }
@@ -42,55 +40,45 @@ async function scrapeInstamart(query, options = {}) {
 
         const page = await context.newPage();
 
-        const jsonPromise = new Promise((resolve) => {
-            page.on('response', async (response) => {
-                const url = response.url();
-                if (url.includes('/api/instamart/search') || url.includes('dapi/instamart') || url.includes('/instamart/search')) {
-                    try {
+        let apiData = null;
+        page.on('response', async (response) => {
+            const url = response.url();
+            if (url.includes('/api/instamart/') || url.includes('/dapi/instamart/') || url.includes('/search')) {
+                try {
+                    const ct = response.headers()['content-type'] || '';
+                    if (ct.includes('json')) {
                         const json = await response.json();
                         if (json && (json.data || json.widgets)) {
-                            resolve(json.data || json);
+                            apiData = json.data || json;
                         }
-                    } catch (e) {}
-                }
-            });
+                    }
+                } catch (e) {}
+            }
         });
 
         const searchUrl = `https://www.swiggy.com/instamart/search?custom_back=true&query=${encodeURIComponent(query)}`;
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: config.SCRAPER_TIMEOUT_MS });
 
-        const apiData = await Promise.race([
-            jsonPromise,
-            new Promise(res => setTimeout(() => res(null), 7000))
-        ]);
+        // Wait up to 5s for XHR data or DOM rendering
+        await page.waitForTimeout(4000);
 
         if (apiData) {
-            console.log(`[InstamartScraper] Intercepted live Swiggy Instamart API response! Parsing items...`);
-            
-            // Collect all potential product nodes from response recursively
             const nodes = [];
-            
             function collectNodes(obj) {
                 if (!obj || typeof obj !== 'object') return;
-                
                 if (obj.name && (obj.price || obj.offerPrice || obj.storePrice || obj.variations)) {
                     nodes.push(obj);
                 }
-
                 if (Array.isArray(obj)) {
                     obj.forEach(collectNodes);
                 } else {
                     Object.values(obj).forEach(collectNodes);
                 }
             }
-
             collectNodes(apiData);
-
-            console.log(`[InstamartScraper] Found ${nodes.length} potential product nodes in live JSON`);
 
             for (const node of nodes) {
                 const title = node.name || node.displayName || node.title || '';
-                
                 let rawPrice = 0;
                 let rawMrp = 0;
 
@@ -100,7 +88,6 @@ async function scrapeInstamart(query, options = {}) {
                     rawMrp = node.price.mrp || rawPrice;
                 } else if (node.offerPrice) rawPrice = node.offerPrice;
 
-                // Normalize price if returned in paise (e.g. 2000 paise = 20 RS)
                 const price = rawPrice > 1000 ? Math.round(rawPrice / 100) : rawPrice;
                 const mrp = rawMrp > 1000 ? Math.round(rawMrp / 100) : (rawMrp || price);
 
@@ -124,24 +111,76 @@ async function scrapeInstamart(query, options = {}) {
                         store: 'instamart'
                     });
                 }
-
                 if (listings.length >= config.MAX_RESULTS_PER_STORE) break;
             }
         }
     } catch (err) {
-        console.error(`[InstamartScraper] Live scrape notice: ${err.message}`);
+        throw new Error(`Instamart page navigation failed: ${err.message}`);
     } finally {
         if (browser) {
             await browser.close().catch(() => {});
         }
     }
 
-    if (listings.length === 0) {
-        console.warn(`[InstamartScraper] Live scrape yielded 0 items. Utilizing Mock Fixtures.`);
-        return getMockDataForQuery(query).instamart;
+    return listings;
+}
+
+/**
+ * Main Scraper with Async Retry Logic & Transparent Status
+ */
+async function scrapeInstamart(query, options = {}) {
+    if (options.useMock) {
+        console.log(`[InstamartScraper] Explicit Mock Fixture requested for query: "${query}"`);
+        const mockData = getMockDataForQuery(query).instamart;
+        return {
+            success: true,
+            listings: mockData,
+            error: null,
+            attempts: 0,
+            isMock: true
+        };
     }
 
-    return listings;
+    const location = options.location || config.DEFAULT_LOCATION;
+    const maxRetries = config.SCRAPER_MAX_RETRIES;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`[InstamartScraper] Attempt ${attempt}/${maxRetries} for query: "${query}"...`);
+            const listings = await scrapeInstamartSingleAttempt(query, location);
+
+            if (listings.length > 0) {
+                console.log(`[InstamartScraper] Attempt ${attempt} succeeded with ${listings.length} live items!`);
+                return {
+                    success: true,
+                    listings: listings,
+                    error: null,
+                    attempts: attempt,
+                    isMock: false
+                };
+            }
+            lastError = 'Instamart bot challenge or 0 listings returned';
+        } catch (err) {
+            lastError = err.message;
+            console.warn(`[InstamartScraper] Attempt ${attempt} failed: ${err.message}`);
+        }
+
+        // Backoff delay before retry
+        if (attempt < maxRetries) {
+            await new Promise(res => setTimeout(res, 1500 * attempt));
+        }
+    }
+
+    // Transparent error reporting (No silent fake mock fallback!)
+    console.warn(`[InstamartScraper] All ${maxRetries} attempts failed for "${query}". Reporting store status as unavailable.`);
+    return {
+        success: false,
+        listings: [],
+        error: `Swiggy Instamart live search unavailable for this location: ${lastError}`,
+        attempts: maxRetries,
+        isMock: false
+    };
 }
 
 module.exports = {
