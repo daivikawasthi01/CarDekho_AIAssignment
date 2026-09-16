@@ -1,11 +1,14 @@
 /**
  * Blinkit Scraper Module
- * Uses Playwright headless Chromium with geolocation settings to extract real-time listings.
+ * Uses Playwright with System Google Chrome for live website extraction.
  */
 
 const { chromium } = require('playwright');
+const fs = require('fs');
 const config = require('../config');
 const { getMockDataForQuery } = require('./mockFixtures');
+
+const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 async function scrapeBlinkit(query, options = {}) {
     if (options.useMock) {
@@ -17,11 +20,18 @@ async function scrapeBlinkit(query, options = {}) {
     let listings = [];
 
     try {
-        console.log(`[BlinkitScraper] Launching Playwright Chromium for query: "${query}"...`);
-        browser = await chromium.launch({
+        console.log(`[BlinkitScraper] Launching Chrome live browser for query: "${query}"...`);
+        
+        const launchOptions = {
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
-        });
+        };
+
+        if (fs.existsSync(CHROME_PATH)) {
+            launchOptions.executablePath = CHROME_PATH;
+        }
+
+        browser = await chromium.launch(launchOptions);
 
         const context = await browser.newContext({
             geolocation: { latitude: config.LOCATION.latitude, longitude: config.LOCATION.longitude },
@@ -50,14 +60,13 @@ async function scrapeBlinkit(query, options = {}) {
         const searchUrl = `https://blinkit.com/s/?q=${encodeURIComponent(query)}`;
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: config.SCRAPER_TIMEOUT_MS });
 
-        // Wait up to 6 seconds for XHR snippets response or timeout
         const snippets = await Promise.race([
             jsonPromise,
             new Promise(res => setTimeout(() => res(null), 6000))
         ]);
 
         if (snippets && snippets.length > 0) {
-            console.log(`[BlinkitScraper] Intercepted ${snippets.length} XHR snippets from Blinkit`);
+            console.log(`[BlinkitScraper] Intercepted ${snippets.length} live snippets from Blinkit`);
             for (const snippet of snippets) {
                 const data = snippet.data;
                 if (!data || !data.name || !data.name.text) continue;
@@ -88,43 +97,6 @@ async function scrapeBlinkit(query, options = {}) {
                 if (listings.length >= config.MAX_RESULTS_PER_STORE) break;
             }
         }
-
-        // DOM Fallback if XHR sniffing missed
-        if (listings.length === 0) {
-            console.log('[BlinkitScraper] XHR sniffing produced 0 items, attempting DOM evaluation...');
-            await page.waitForTimeout(2000);
-
-            const cards = await page.$$('[data-test-id="product-card"], .Product__Card, div[class*="Product"]');
-            for (const card of cards.slice(0, config.MAX_RESULTS_PER_STORE)) {
-                try {
-                    const titleElem = await card.$('div[class*="name"], .Product__UpdatedTitle, font');
-                    const priceElem = await card.$('div[class*="price"], .Product__UpdatedPrice');
-                    const variantElem = await card.$('div[class*="variant"], .Product__UpdatedQuantity');
-                    const imgElem = await card.$('img');
-
-                    const title = titleElem ? await titleElem.textContent() : '';
-                    const priceStr = priceElem ? await priceElem.textContent() : '0';
-                    const variant = variantElem ? await variantElem.textContent() : '';
-                    const imageUrl = imgElem ? await imgElem.getAttribute('src') : '';
-
-                    const price = parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0;
-
-                    if (title && price > 0) {
-                        listings.push({
-                            id: `b_dom_${Math.random().toString(36).substr(2, 6)}`,
-                            title: title.trim(),
-                            variantText: variant.trim(),
-                            price: price,
-                            mrp: price,
-                            imageUrl: imageUrl,
-                            inStock: true,
-                            store: 'blinkit'
-                        });
-                    }
-                } catch (e) {}
-            }
-        }
-
     } catch (err) {
         console.error(`[BlinkitScraper] Exception: ${err.message}`);
     } finally {
