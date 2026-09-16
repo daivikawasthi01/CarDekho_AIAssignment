@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grocery Price Race | Blinkit vs Swiggy Instamart</title>
+    <meta name="description" content="Compare real-time grocery prices across Blinkit and Swiggy Instamart in one search.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-wrapper">
+        <!-- Top Location & Header -->
+        <header class="top-header">
+            <div class="brand-title">
+                <h1>Grocery Price Compare</h1>
+                <p class="subtitle">Blinkit vs Swiggy Instamart</p>
+            </div>
+            
+            <div class="location-badge" id="location-badge">
+                <span class="pulse-dot"></span>
+                <span id="location-text">Koramangala 4th Block, Bengaluru - 560034</span>
+            </div>
+        </header>
+
+        <!-- Search Container -->
+        <main class="main-content">
+            <section class="search-section">
+                <form id="search-form" class="search-form">
+                    <div class="input-wrapper">
+                        <input type="text" id="search-input" placeholder="Search item (e.g. Maggi, Amul butter, Tata salt)..." autocomplete="off" autofocus>
+                        <button type="submit" id="search-btn" class="btn-primary">
+                            <span>Compare Prices</span>
+                            <div class="spinner" id="search-spinner" hidden></div>
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Quick Suggestion Pills -->
+                <div class="quick-pills">
+                    <span class="pills-label">Popular:</span>
+                    <button class="pill-btn" data-query="Maggi">Maggi</button>
+                    <button class="pill-btn" data-query="Amul Butter">Amul Butter</button>
+                    <button class="pill-btn" data-query="Tata Salt">Tata Salt</button>
+                    <button class="pill-btn" data-query="Aashirvaad Atta">Aashirvaad Atta</button>
+                    <button class="pill-btn" data-query="Coke">Coke</button>
+                </div>
+            </section>
+
+            <!-- Metadata & Stat Bar -->
+            <section id="meta-bar" class="meta-bar hidden">
+                <div class="stat-item">
+                    <span class="stat-label">Results Found</span>
+                    <span class="stat-val" id="stat-total">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Matches</span>
+                    <span class="stat-val text-success" id="stat-confident">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Latency</span>
+                    <span class="stat-val" id="stat-latency">0ms</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Data Source</span>
+                    <span class="stat-badge" id="stat-cache">Live Stream</span>
+                </div>
+            </section>
+
+            <!-- Results Output Area -->
+            <div id="results-container" class="results-container">
+                <!-- Initial Empty State -->
+                <div class="empty-state" id="empty-state">
+                    <h2>Compare Prices Across Stores</h2>
+                    <p>Enter a grocery or food product above to search and compare real-time prices from Blinkit and Instamart.</p>
+                </div>
+
+                <!-- Confident Matches Section -->
+                <section id="confident-section" class="results-section hidden">
+                    <div class="section-header">
+                        <div class="section-title">
+                            <h2>Matched Products</h2>
+                            <span class="count-pill" id="confident-count">0</span>
+                        </div>
+                        <p class="section-desc">Identified matching listings across both delivery platforms.</p>
+                    </div>
+                    <div class="grid-matches" id="confident-grid"></div>
+                </section>
+
+                <!-- Likely Matches Section -->
+                <section id="likely-section" class="results-section hidden">
+                    <div class="section-header">
+                        <div class="section-title">
+                            <h2>Similar Products</h2>
+                            <span class="count-pill warning" id="likely-count">0</span>
+                        </div>
+                        <p class="section-desc">Listings matched with high probability, but variant descriptions differ slightly.</p>
+                    </div>
+                    <div class="grid-matches" id="likely-grid"></div>
+                </section>
+
+                <!-- Unmatched Split View Section -->
+                <section id="unmatched-section" class="results-section hidden">
+                    <div class="section-header">
+                        <div class="section-title">
+                            <h2>Single Platform Listings</h2>
+                        </div>
+                        <p class="section-desc">Store-exclusive listings or items without a cross-platform pair.</p>
+                    </div>
+                    <div class="unmatched-split">
+                        <div class="store-col blinkit-col">
+                            <div class="col-header blinkit-theme">
+                                <span class="store-name">Blinkit Only</span>
+                                <span class="count-pill" id="blinkit-unmatched-count">0</span>
+                            </div>
+                            <div class="unmatched-list" id="blinkit-unmatched-list"></div>
+                        </div>
+
+                        <div class="store-col instamart-col">
+                            <div class="col-header instamart-theme">
+                                <span class="store-name">Swiggy Instamart Only</span>
+                                <span class="count-pill" id="instamart-unmatched-count">0</span>
+                            </div>
+                            <div class="unmatched-list" id="instamart-unmatched-list"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

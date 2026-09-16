@@ -1,0 +1,26 @@
+{
+  "name": "grocery-price-compare",
+  "version": "1.0.0",
+  "description": "The Great Grocery Price Race - Real-time price comparison across Blinkit and Swiggy Instamart for CarDekho Group",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "postinstall": "npx playwright install chromium",
+    "test": "node test/test_matching.js"
+  },
+  "keywords": [
+    "grocery",
+    "price-compare",
+    "blinkit",
+    "instamart",
+    "playwright",
+    "cardekho"
+  ],
+  "author": "Daivik Awasthi",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "playwright": "^1.44.0"
+  }
+}
